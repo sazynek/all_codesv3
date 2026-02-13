@@ -1,0 +1,12 @@
+{
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer"
+    },
+    "rust-analyzer.cargo.extraEnv": {
+        "BINDING_PATH": "${workspaceFolder}/build/bindings.rs"
+    },
+    "rust-analyzer.check.extraEnv": {
+        "BINDING_PATH": "${workspaceFolder}/build/bindings.rs"
+    },
+    "rust-analyzer.restartServerOnConfigChange": true,
+}

@@ -1,0 +1,195 @@
+use animation::egui_integration::AnimationManager;
+use animation::{Animation, SpringConfig};
+use egui::{Color32, Id, Pos2, Rect, Stroke};
+use std::time::Duration;
+
+fn main() -> eframe::Result {
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder{
+            max_inner_size:Some(egui::Vec2::new(800.0, 600.0)),
+            ..Default::default()},
+        ..Default::default()
+    };
+    
+    eframe::run_native(
+        "Global Ripple Effect Demo",
+        native_options,
+        Box::new(|_cc| Ok(Box::new(GlobalRippleApp::new()))),
+    )
+}
+
+struct GlobalRippleApp {
+    animation_manager: AnimationManager,
+    background_color: Color32,
+    ripple_intensity: f32,
+    show_debug_info: bool,
+}
+
+impl GlobalRippleApp {
+    fn new() -> Self {
+        Self {
+            animation_manager: AnimationManager::new(),
+            background_color: Color32::from_rgb(25, 25, 35),
+            ripple_intensity: 1.0,
+            show_debug_info: false,
+        }
+    }
+}
+
+impl eframe::App for GlobalRippleApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Обновляем анимации
+        self.animation_manager.update(ctx);
+
+        // Обрабатываем клики по всему экрану
+        let screen_rect = ctx.screen_rect();
+        let response = ctx.input(|i| {
+            if i.pointer.primary_clicked() {
+                i.pointer.interact_pos()
+            } else {
+                None
+            }
+        });
+
+        if let Some(click_pos) = response {
+            // Создаем ripple эффект в позиции клика
+            self.animation_manager.create_global_ripple(click_pos, ctx);
+            
+            // Добавляем дополнительную анимацию для фона
+            self.animation_manager.add_animation(Animation::new_tween(
+                "background_pulse",
+                0.0,
+                1.0,
+                Duration::from_millis(300),
+            ).with_on_complete({
+                let manager = self.animation_manager.clone();
+                move || {
+                    manager.add_animation(Animation::new_tween(
+                        "background_pulse",
+                        1.0,
+                        0.0,
+                        Duration::from_millis(300),
+                    ));
+                }
+            }));
+        }
+
+        // Получаем текущее значение пульсации фона
+        let bg_pulse = self.animation_manager.get_value("background_pulse").unwrap_or(0.0) as f32;
+
+        // Отрисовываем основной интерфейс
+        egui::CentralPanel::default()
+            .frame(egui::Frame {
+                fill: self.background_color.gamma_multiply(1.0 + bg_pulse * 0.1),
+                stroke: Stroke::NONE,
+                ..Default::default()
+            })
+            .show(ctx, |ui| {
+                // Заголовок
+                ui.vertical_centered(|ui| {
+                    ui.heading("🌊 Global Ripple Effect Demo");
+                    ui.label("Click anywhere on the screen to create beautiful ripple effects!");
+                    ui.add_space(20.0);
+                });
+
+                // Информационная панель
+                ui.horizontal(|ui| {
+                    ui.label("💡 Tips:");
+                    ui.label("• Click anywhere to create ripples");
+                    ui.label("• Try different areas for different colors");
+                });
+
+                ui.add_space(30.0);
+
+                // Настройки
+                ui.collapsing("Settings", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Background:");
+                        if ui.button("Dark").clicked() {
+                            self.background_color = Color32::from_rgb(25, 25, 35);
+                        }
+                        if ui.button("Light").clicked() {
+                            self.background_color = Color32::from_rgb(240, 240, 245);
+                        }
+                        if ui.button("Blue").clicked() {
+                            self.background_color = Color32::from_rgb(30, 35, 60);
+                        }
+                    });
+
+                    ui.add(egui::Slider::new(&mut self.ripple_intensity, 0.5..=2.0).text("Ripple Intensity"));
+
+                    ui.checkbox(&mut self.show_debug_info, "Show debug info");
+                });
+
+                // Статистика
+                if self.show_debug_info {
+                    ui.add_space(20.0);
+                    ui.collapsing("Debug Info", |ui| {
+                        ui.label(format!("Active animations: {}", {
+                            let timeline = self.animation_manager.timeline.lock().unwrap();
+                            timeline.animation_count()
+                        }));
+                        ui.label(format!("Active ripples: {}", {
+                            let ripples = self.animation_manager.ripples.lock().unwrap();
+                            ripples.len()
+                        }));
+                        ui.label(format!("Background pulse: {:.3}", bg_pulse));
+                    });
+                }
+
+                // Интерактивная зона с инструкциями
+                ui.add_space(50.0);
+                ui.vertical_centered(|ui| {
+                    let response = ui.add(
+                        egui::Button::new("🎯 Click This Area Too!")
+                            .min_size(egui::Vec2::new(200.0, 60.0))
+                    );
+                    
+                    if response.clicked() {
+                        // Создаем ripple в центре кнопки
+                        let button_center = response.rect.center();
+                        self.animation_manager.create_global_ripple(button_center, ctx);
+                    }
+                    
+                    ui.add_space(20.0);
+                    ui.label("The ripple colors change based on where you click!");
+                });
+
+                // Градиентная подсказка
+                ui.add_space(40.0);
+                ui.horizontal(|ui| {
+                    ui.label("Color gradient:");
+                    let width = ui.available_width();
+                    let height = 20.0;
+                    let rect = ui.allocate_space(egui::Vec2::new(width, height)).0;
+                    
+                    for i in 0..width as usize {
+                        let x = i as f32;
+                        let normalized_x = x / width;
+                        let hue = normalized_x * 360.0;
+                        let color = self.animation_manager.hsv_to_rgb(hue, 0.8, 0.9);
+                        
+                        ui.painter().rect_filled(
+                            Rect::from_min_size(
+                                Pos2::new(rect.value() as f32 + x, rect.value() as f32),
+                                egui::Vec2::new(1.0, height),
+                            ),
+                            egui::Rounding::ZERO,
+                            color,
+                        );
+                    }
+                });
+
+                ui.add_space(10.0);
+                ui.label("← Colors change based on horizontal position →");
+            });
+
+        // Отрисовываем ripple эффекты поверх всего UI
+        egui::Area::new(Id::from("ripples_layer"))
+            .order(egui::Order::Foreground)
+            .interactable(false) // чтобы клики проходили сквозь
+            .show(ctx, |ui| {
+                self.animation_manager.paint_global_ripples(ui);
+            });
+    }
+}

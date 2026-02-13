@@ -1,0 +1,199 @@
+use proc_macro::TokenStream;
+use quote::{format_ident, quote};
+use syn::{Data, DeriveInput, Fields, Lit, parse_macro_input};
+
+#[proc_macro_attribute]
+pub fn animator(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let struct_name = &input.ident;
+
+    let fields = if let Data::Struct(data) = &input.data {
+        if let Fields::Named(fields) = &data.fields {
+            &fields.named
+        } else {
+            panic!("Struct must have named fields");
+        }
+    } else {
+        panic!("Macro can only be applied to structs");
+    };
+
+    let mut original_fields = Vec::new();
+    let mut animation_groups = std::collections::HashSet::new();
+    let mut update_statements = Vec::new();
+
+    // Для генерации new()
+    let mut new_fields = Vec::new();
+    let mut group_fields_decl = Vec::new();
+    let mut group_fields_init = Vec::new();
+
+    for field in fields {
+        let field_ident = field.ident.as_ref().unwrap();
+        let field_type = &field.ty;
+
+        original_fields.push(quote! {
+            #field_ident: #field_type
+        });
+
+        let mut is_animated = false;
+        let mut has_value_attr = false;
+        let mut value_expr = None;
+
+        // Проверяем атрибут #[animation]
+        for attr in &field.attrs {
+            if attr.path().is_ident("animation") {
+                is_animated = true;
+                let mut group_name = None;
+                let mut property_name = None;
+                let mut element_id = None;
+
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("group") {
+                        let value = meta.value()?;
+                        let lit: Lit = value.parse()?;
+                        if let Lit::Str(lit_str) = lit {
+                            group_name = Some(lit_str.value());
+                        }
+                        Ok(())
+                    } else if meta.path.is_ident("property") {
+                        let value = meta.value()?;
+                        let lit: Lit = value.parse()?;
+                        if let Lit::Str(lit_str) = lit {
+                            property_name = Some(lit_str.value());
+                        }
+                        Ok(())
+                    } else if meta.path.is_ident("id") {
+                        let value = meta.value()?;
+                        let lit: Lit = value.parse()?;
+                        if let Lit::Str(lit_str) = lit {
+                            element_id = Some(lit_str.value());
+                        }
+                        Ok(())
+                    } else {
+                        Err(meta.error("unknown animation parameter"))
+                    }
+                })
+                .unwrap();
+
+                if let (Some(group), Some(property), Some(id)) =
+                    (group_name, property_name, element_id)
+                {
+                    animation_groups.insert(group.clone());
+
+                    let group_ident = format_ident!("{}", group);
+                    let property_ident = format_ident!("get_{}", property);
+
+                    update_statements.push(quote! {
+                        self.#field_ident = self.#group_ident.animate(#id).#property_ident;
+                    });
+
+                    // Для анимированных полей используем минимальное значение
+                    new_fields.push(quote! {
+                        #field_ident: #field_type::default()
+                    });
+                }
+            }
+
+            if attr.path().is_ident("value") {
+                has_value_attr = true;
+                match &attr.meta {
+                    // Обработка #[value(...)]
+                    syn::Meta::List(meta_list) => match meta_list.parse_args::<syn::Expr>() {
+                        Ok(expr) => {
+                            value_expr = Some(expr);
+                        }
+                        Err(e) => {
+                            eprintln!("Ошибка парсинга атрибута value: {}", e);
+                        }
+                    },
+                    // Обработка #[value = ...] - если нужно поддерживать оба формата
+                    syn::Meta::NameValue(name_value) => {
+                        value_expr = Some(name_value.value.clone());
+                    }
+                    _ => {
+                        eprintln!("Неподдерживаемый формат атрибута value");
+                    }
+                }
+            }
+        }
+
+        // Если поле не анимированное и имеет атрибут #[value]
+        if !is_animated && has_value_attr {
+            if let Some(expr) = value_expr {
+                new_fields.push(quote! {
+                    #field_ident: #expr
+                });
+            }
+        }
+
+        // Если поле не анимированное и не имеет атрибута #[value]
+        if !is_animated && !has_value_attr {
+            // Генерируем умную инициализацию
+            println!(
+                "-------------------------------------------SMART-------------------------------------------"
+            );
+            let init_expr = generate_smart_initialization(field_type);
+            new_fields.push(quote! {
+                #field_ident: #init_expr
+            });
+        }
+    }
+
+    // Добавляем группы анимаций в структуру и new()
+    for group in &animation_groups {
+        let group_ident = format_ident!("{}", group);
+        group_fields_decl.push(quote! {
+            #group_ident: #group_ident
+        });
+        group_fields_init.push(quote! {
+            #group_ident: #group_ident::new()
+        });
+    }
+
+    println!("\nFILEDS = {}\n", quote! {#(#new_fields,)*});
+    println!("\nGROUD = {}\n", quote! {#(#group_fields_init,)*});
+
+    let expanded = quote! {
+        #[derive(Debug)]
+        struct #struct_name {
+            #(#original_fields,)*
+            #(#group_fields_decl,)*
+        }
+
+        impl #struct_name {
+            pub fn new() -> Self {
+                Self {
+                    #(#new_fields,)*
+                    #(#group_fields_init,)*
+                }
+            }
+
+            pub fn update_animations(&mut self) {
+                #(#update_statements)*
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+
+fn generate_smart_initialization(field_type: &syn::Type) -> proc_macro2::TokenStream {
+    let type_str = quote!(#field_type).to_string();
+
+    // Проверяем примитивные типы и распространенные типы
+    match type_str.as_str() {
+        "f32" | "f64" => quote! { 0.0 },
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" => quote! { 0 },
+        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" => quote! { 0 },
+        "bool" => quote! { false },
+        "String" => quote! { String::new() },
+        "&str" => quote! { "" },
+        _ => {
+            // Для пользовательских типов используем Default
+            // Компилятор проверит, реализует ли тип Default
+            quote! {
+                #field_type::default()
+            }
+        }
+    }
+}

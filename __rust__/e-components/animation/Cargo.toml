@@ -1,0 +1,20 @@
+[package]
+name = "animation"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+derive_builder = "0.20.2"
+egui= "0.32.3"
+fxhash = "0.2.1"
+serde = {version="1.0.228", features = ["derive"]}
+
+
+[lib]
+name = "animation"  
+crate-type = ["lib"]
+path = "src/lib.rs"  
+
+# [features]
+# default = []
+# egui = ["dep:egui"]

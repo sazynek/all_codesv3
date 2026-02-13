@@ -1,0 +1,57 @@
+// {
+//   "rust-analyzer.diagnostics.enable": false,
+//   "rust-analyzer.cargo.buildScripts.enable": true,
+//    "editor.semanticHighlighting.enabled": true,//
+//    "rust-analyzer.checkOnSave": true,
+//    "rust-analyzer.diagnostics.experimental.enable": true, //
+//   "rust-analyzer.inlayHints.typeHints.enable":true,
+//   "rust-analyzer.inlayHints.parameterHints.enable":true,
+//   "rust-analyzer.imports.group.enable": true,
+//   "rust-analyzer.check.command": "clippy",
+
+//   "rust-analyzer.diagnostics.disabled": [
+//     "unresolved-proc-macro"
+//   ],
+//   "rust-analyzer.cargo.autoreload": false,
+//   "rust-analyzer.procMacro.enable": false,
+//   "rust-analyzer.server.extraEnv": {
+//     "RA_MEMORY_USAGE_LIMIT": "3072"
+//   },
+
+//   "rust-analyzer.lru.capacity": 128,
+//   "rust-analyzer.completion.autoimport.enable": true
+// }
+{
+  "rust-analyzer.diagnostics.enable": false,
+  "rust-analyzer.cargo.buildScripts.enable": true,
+  "editor.semanticHighlighting.enabled": true,
+  "rust-analyzer.checkOnSave": true,
+  "rust-analyzer.diagnostics.experimental.enable": true,
+  "rust-analyzer.inlayHints.typeHints.enable": true,
+  "rust-analyzer.inlayHints.parameterHints.enable": true,
+  "rust-analyzer.imports.group.enable": true,
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.diagnostics.disabled": [
+    "unresolved-proc-macro"
+  ],
+  "rust-analyzer.cargo.autoreload": false,
+  "rust-analyzer.procMacro.enable": false,
+  "rust-analyzer.server.extraEnv": {
+    "RA_MEMORY_USAGE_LIMIT": "3072"
+  },
+  "rust-analyzer.lru.capacity": 128,
+  "rust-analyzer.completion.autoimport.enable": true,
+  "rust-analyzer.cachePriming.enable": true,
+  "rust-analyzer.cargo.allTargets": true,
+  "cSpell.words": [
+    "анимируемый",
+    "заврарачивании",
+    "колбэк",
+    "колбэков",
+    "колбэком",
+    "распарсить",
+    "anims",
+    "eframe",
+    "egui"
+  ]
+}

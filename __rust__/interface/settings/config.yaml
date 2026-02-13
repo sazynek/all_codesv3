@@ -1,0 +1,206 @@
+commands:
+- title: Create test file
+  command: touch testfile.txt
+  system: Linux
+  default_command: true
+  need_root: false
+- title: List directory
+  command: ls -la
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Show current path
+  command: pwd
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Create directory
+  command: mkdir new_folder
+  system: Linux
+  default_command: true
+  need_root: false
+- title: System info
+  command: uname -a
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Update packages
+  command: apt update
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Install package
+  command: apt install package-name
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Check disk space
+  command: df -h
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Process list
+  command: ps aux
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Network info
+  command: ifconfig
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Windows dir
+  command: dir
+  system: Windows
+  default_command: true
+  need_root: false
+- title: Windows system info
+  command: systeminfo
+  system: Windows
+  default_command: true
+  need_root: false
+- title: IP configuration
+  command: ipconfig
+  system: Windows
+  default_command: true
+  need_root: false
+- title: Network stats
+  command: netstat
+  system: Windows
+  default_command: true
+  need_root: false
+- title: Task list
+  command: tasklist
+  system: Windows
+  default_command: true
+  need_root: false
+- title: Service list
+  command: sc query
+  system: Windows
+  default_command: true
+  need_root: false
+- title: MacOS list
+  command: ls -la
+  system: MacOS
+  default_command: true
+  need_root: false
+- title: MacOS system info
+  command: system_profiler SPSoftwareDataType
+  system: MacOS
+  default_command: true
+  need_root: false
+- title: Brew update
+  command: brew update
+  system: MacOS
+  default_command: true
+  need_root: false
+- title: Git status
+  command: git status
+  system: Any
+  default_command: true
+  need_root: false
+- title: Git log
+  command: git log --oneline
+  system: Any
+  default_command: true
+  need_root: false
+- title: Docker ps
+  command: docker ps
+  system: Any
+  default_command: true
+  need_root: false
+- title: Node version
+  command: node --version
+  system: Any
+  default_command: true
+  need_root: false
+- title: Update System
+  command: apt update && apt upgrade -y
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Clean Package Cache
+  command: apt clean
+  system: Linux
+  default_command: true
+  need_root: false
+- title: View System Logs
+  command: journalctl -f
+  system: Linux
+  default_command: true
+  need_root: false
+- title: List Services
+  command: systemctl list-units --type=service
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Restart Network
+  command: systemctl restart networking
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Check Disk Space
+  command: df -h
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Python version
+  command: python --version
+  system: Any
+  default_command: true
+  need_root: false
+- title: Pip list
+  command: pip list
+  system: Any
+  default_command: true
+  need_root: false
+- title: Rust version
+  command: rustc --version
+  system: Any
+  default_command: true
+  need_root: false
+- title: Cargo build
+  command: cargo build
+  system: Any
+  default_command: true
+  need_root: false
+- title: NPM version
+  command: npm --version
+  system: Any
+  default_command: true
+  need_root: false
+- title: Date and time
+  command: date
+  system: Any
+  default_command: true
+  need_root: false
+- title: Calendar
+  command: cal
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Memory usage
+  command: free -h
+  system: Linux
+  default_command: true
+  need_root: false
+- title: CPU info
+  command: lscpu
+  system: Linux
+  default_command: true
+  need_root: false
+- title: Environment variables
+  command: env
+  system: Any
+  default_command: true
+  need_root: false
+- title: Current user
+  command: whoami
+  system: Any
+  default_command: true
+  need_root: false
+- title: System uptime
+  command: uptime
+  system: Linux
+  default_command: true
+  need_root: false
