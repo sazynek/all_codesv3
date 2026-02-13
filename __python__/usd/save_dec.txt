@@ -1,0 +1,2463 @@
+from __future__ import annotations
+import functools
+from enum import Enum, auto
+from typing import (
+    Callable,
+    overload,
+    Sequence,
+    Optional,
+    Hashable,
+    TypeAlias,
+    cast,
+    Any,
+    Iterator,
+    # Iterable,
+)
+from toolz import (  # type: ignore
+    unique as toolz_unique,  # type: ignore
+    groupby as toolz_groupby,  # type: ignore
+    take as toolz_take,  # type: ignore
+    drop as toolz_drop,  # type: ignore
+    partition_all,  # type: ignore
+    concat,  # type: ignore
+    compose,  # type: ignore
+    pipe,  # type: ignore
+    interpose as toolz_interpose,  # type: ignore
+    pluck as toolz_pluck,  # type: ignore
+    diff as toolz_diff,  # type: ignore
+    topk as toolz_topk,  # type: ignore
+    remove as toolz_remove,  # type: ignore
+    accumulate as toolz_accumulate,  # type: ignore
+    join as toolz_join,  # type: ignore
+)
+
+
+# Типы для данных
+JsonValue: TypeAlias = (
+    str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+)
+JsonDict: TypeAlias = dict[str, JsonValue]
+
+
+class OperationType(Enum):
+    Unique = auto()
+    Slice = auto()
+    Sort = auto()
+    Filter = auto()
+    Map = auto()
+    GroupBy = auto()
+    Flatten = auto()
+    Chunk = auto()
+    Take = auto()
+    Drop = auto()
+    Interpose = auto()
+    Pluck = auto()
+    Diff = auto()
+    TopK = auto()
+    Remove = auto()
+    Accumulate = auto()
+    Join = auto()
+
+
+# Конфигурации для операций
+class OperationConfig:
+    pass
+
+
+class UniqueConfig(OperationConfig):
+    def __init__(self, key: Optional[Callable[[Any], Hashable]] = None):
+        self.key = key
+
+
+class SliceConfig(OperationConfig):
+    def __init__(
+        self,
+        start: Optional[int] = None,
+        stop: Optional[int] = None,
+        step: Optional[int] = None,
+    ):
+        self.start = start
+        self.stop = stop
+        self.step = step
+
+
+class SortConfig(OperationConfig):
+    def __init__(
+        self,
+        key: Optional[Callable[[Any], Any]] = None,
+        reverse: bool = False,
+    ):
+        self.key = key
+        self.reverse = reverse
+
+
+class FilterConfig(OperationConfig):
+    def __init__(self, predicate: Callable[[Any], bool]):
+        self.predicate = predicate
+
+
+class MapConfig(OperationConfig):
+    def __init__(self, transform: Callable[[Any], Any]):
+        self.transform = transform
+
+
+class GroupByConfig(OperationConfig):
+    def __init__(self, key: Callable[[Any], Hashable]):
+        self.key = key
+
+
+class FlattenConfig(OperationConfig):
+    def __init__(self, level: int = 1):
+        self.level = level
+
+
+class ChunkConfig(OperationConfig):
+    def __init__(self, size: int):
+        self.size = size
+
+
+class TakeConfig(OperationConfig):
+    def __init__(self, n: int):
+        self.n = n
+
+
+class DropConfig(OperationConfig):
+    def __init__(self, n: int):
+        self.n = n
+
+
+class InterposeConfig(OperationConfig):
+    def __init__(self, separator: Any):
+        self.separator = separator
+
+
+class PluckConfig(OperationConfig):
+    def __init__(self, key: str | int | Sequence[str | int]):
+        self.key = key
+
+
+class DiffConfig(OperationConfig):
+    def __init__(self, default: Any = None):
+        self.default = default
+
+
+class TopKConfig(OperationConfig):
+    def __init__(self, k: int, key: Optional[Callable[[Any], Any]] = None):
+        self.k = k
+        self.key = key
+
+
+class RemoveConfig(OperationConfig):
+    def __init__(self, predicate: Callable[[Any], bool]):
+        self.predicate = predicate
+
+
+class AccumulateConfig(OperationConfig):
+    def __init__(self, func: Callable[[Any, Any], Any], initial: Optional[Any] = None):
+        self.func = func
+        self.initial = initial
+
+
+class JoinConfig(OperationConfig):
+    def __init__(
+        self,
+        left_key: Callable[[Any], Hashable],
+        right_data: Sequence[Any],
+        right_key: Callable[[Any], Hashable],
+    ):
+        self.left_key = left_key
+        self.right_data = right_data
+        self.right_key = right_key
+
+
+class ArrayProcessor[T]:
+    """Универсальный процессор на основе Toolz"""
+
+    def __init__(self, data: Sequence[T]):
+        self.data = data
+
+    def process(
+        self,
+        operation: OperationType,
+        config: OperationConfig,
+    ) -> Sequence[T] | dict[Hashable, list[T]]:
+        """Основной метод обработки"""
+        return self._try_operation(operation, config)
+
+    def _try_operation(
+        self, operation: OperationType, config: OperationConfig
+    ) -> Sequence[T] | dict[Hashable, list[T]]:
+        match operation:
+            case OperationType.Unique:
+                unique_config = cast(UniqueConfig, config)
+                return self._unique(unique_config)
+            case OperationType.Slice:
+                slice_config = cast(SliceConfig, config)
+                return self._slice(slice_config)
+            case OperationType.Sort:
+                sort_config = cast(SortConfig, config)
+                return self._sort(sort_config)
+            case OperationType.Filter:
+                filter_config = cast(FilterConfig, config)
+                return self._filter(filter_config)
+            case OperationType.Map:
+                map_config = cast(MapConfig, config)
+                return self._map(map_config)
+            case OperationType.GroupBy:
+                group_config = cast(GroupByConfig, config)
+                return self._groupby(group_config)
+            case OperationType.Flatten:
+                flatten_config = cast(FlattenConfig, config)
+                return self._flatten(flatten_config)
+            case OperationType.Chunk:
+                chunk_config = cast(ChunkConfig, config)
+                return self._chunk(chunk_config)  # type: ignore
+            case OperationType.Take:
+                take_config = cast(TakeConfig, config)
+                return self._take(take_config)
+            case OperationType.Drop:
+                drop_config = cast(DropConfig, config)
+                return self._drop(drop_config)
+            case OperationType.Interpose:
+                interpose_config = cast(InterposeConfig, config)
+                return self._interpose(interpose_config)
+            case OperationType.Pluck:
+                pluck_config = cast(PluckConfig, config)
+                return self._pluck(pluck_config)
+            case OperationType.Diff:
+                diff_config = cast(DiffConfig, config)
+                return self._diff(diff_config)
+            case OperationType.TopK:
+                topk_config = cast(TopKConfig, config)
+                return self._topk(topk_config)
+            case OperationType.Remove:
+                remove_config = cast(RemoveConfig, config)
+                return self._remove(remove_config)
+            case OperationType.Accumulate:
+                accumulate_config = cast(AccumulateConfig, config)
+                return self._accumulate(accumulate_config)
+            case OperationType.Join:
+                join_config = cast(JoinConfig, config)
+                return self._join(join_config)
+            case _:
+                raise ValueError(f"Неизвестная операция: {operation}")
+
+    # === UNIQUE OPERATION ===
+    def _unique(self, config: UniqueConfig) -> Sequence[T]:
+        return self._unique_toolz(config.key)
+
+    def _unique_toolz(self, key: Optional[Callable[[T], Hashable]] = None) -> list[T]:
+        try:
+            # Пробуем использовать toolz.unique
+            unique_iter = (
+                toolz_unique(self.data, key=key) if key else toolz_unique(self.data)
+            )
+            return list(unique_iter)
+        except TypeError as e:
+            if "unhashable type" in str(e):
+                # Если элементы нехэшируемы и key не указан, используем альтернативный подход
+                if key is None:
+                    return self._unique_fallback()
+                else:
+                    raise
+            else:
+                raise
+
+    def _unique_fallback(self) -> list[T]:
+        """Альтернативная реализация для нехэшируемых типов"""
+        seen = []
+        result = []
+        for item in self.data:
+            # Для нехэшируемых типов используем сравнение через repr или прямой поиск
+            item_repr = repr(item)
+            if item_repr not in seen:
+                seen.append(item_repr)  # type: ignore
+                result.append(item)  # type: ignore
+        return result  # type: ignore
+
+    # === SLICE OPERATION ===
+    def _slice(self, config: SliceConfig) -> Sequence[T]:
+        return self._slice_toolz(config)
+
+    def _slice_toolz(self, config: SliceConfig) -> list[T]:
+        return list(self.data[config.start : config.stop : config.step])
+
+    # === SORT OPERATION ===
+    def _sort(self, config: SortConfig) -> Sequence[T]:
+        return self._sort_toolz(config)
+
+    def _sort_toolz(self, config: SortConfig) -> list[T]:
+        if config.key:
+            return sorted(self.data, key=config.key, reverse=config.reverse)
+        else:
+            return sorted(self.data, reverse=config.reverse)  # type: ignore
+
+    # === FILTER OPERATION ===
+    def _filter(self, config: FilterConfig) -> Sequence[T]:
+        return self._filter_toolz(config)
+
+    def _filter_toolz(self, config: FilterConfig) -> list[T]:
+        return [item for item in self.data if config.predicate(item)]
+
+    # === MAP OPERATION ===
+    def _map(self, config: MapConfig) -> Sequence[Any]:
+        return self._map_toolz(config)
+
+    def _map_toolz(self, config: MapConfig) -> list[Any]:
+        return [config.transform(item) for item in self.data]
+
+    # === GROUPBY OPERATION ===
+    def _groupby(self, config: GroupByConfig) -> dict[Hashable, list[T]]:
+        return self._groupby_toolz(config)
+
+    def _groupby_toolz(self, config: GroupByConfig) -> dict[Hashable, list[T]]:
+        return toolz_groupby(config.key, self.data)  # type: ignore
+
+    # === FLATTEN OPERATION ===
+    def _flatten(self, config: FlattenConfig) -> Sequence[Any]:
+        return self._flatten_toolz(config)
+
+    def _flatten_toolz(self, config: FlattenConfig) -> list[Any]:
+        def _flatten_deep(items: Sequence[Any], level: int) -> Iterator[Any]:
+            """Рекурсивное выравнивание с контролем уровня"""
+            if level <= 0:
+                yield from items
+                return
+
+            for item in items:
+                if isinstance(item, (list, tuple)):
+                    yield from _flatten_deep(item, level - 1)  # type: ignore
+                else:
+                    yield item
+
+        return list(_flatten_deep(self.data, config.level))
+
+    # === CHUNK OPERATION ===
+    def _chunk(self, config: ChunkConfig) -> Sequence[list[T]]:
+        return self._chunk_toolz(config)
+
+    def _chunk_toolz(self, config: ChunkConfig) -> list[list[T]]:
+        return list(partition_all(config.size, self.data))  # type: ignore
+
+    # === TAKE OPERATION ===
+    def _take(self, config: TakeConfig) -> Sequence[T]:
+        return self._take_toolz(config)
+
+    def _take_toolz(self, config: TakeConfig) -> list[T]:
+        return list(toolz_take(config.n, self.data))  # type: ignore
+
+    # === DROP OPERATION ===
+    def _drop(self, config: DropConfig) -> Sequence[T]:
+        return self._drop_toolz(config)
+
+    def _drop_toolz(self, config: DropConfig) -> list[T]:
+        return list(toolz_drop(config.n, self.data))
+
+    # === INTERPOSE OPERATION ===
+    def _interpose(self, config: InterposeConfig) -> Sequence[Any]:
+        return self._interpose_toolz(config)
+
+    def _interpose_toolz(self, config: InterposeConfig) -> list[Any]:
+        """Вставляет разделитель между элементами"""
+        return list(toolz_interpose(config.separator, self.data))  # type: ignore
+
+    # === PLUCK OPERATION ===
+    def _pluck(self, config: PluckConfig) -> Sequence[Any]:
+        return self._pluck_toolz(config)
+
+    def _pluck_toolz(self, config: PluckConfig) -> list[Any]:
+        """Извлекает значения по ключу из словарей или элементов"""
+        if isinstance(config.key, (str, int)):
+            return list(toolz_pluck(config.key, self.data))  # type: ignore
+        else:
+            return list(toolz_pluck(config.key, self.data))  # type: ignore
+
+    # === DIFF OPERATION ===
+    def _diff(self, config: DiffConfig) -> Sequence[Any]:
+        return self._diff_toolz(config)
+
+    def _diff_toolz(self, config: DiffConfig) -> Sequence[Any]:
+        """Вычисляет разницу между последовательными элементами"""
+        if len(self.data) <= 1:
+            return []
+
+        result = []
+        for i in range(1, len(self.data)):
+            diff = (  # type: ignore
+                self.data[i] - self.data[i - 1]  # type: ignore
+            )  # предполагая, что элементы поддерживают вычитание
+            result.append(diff)  # type: ignore
+
+        return result  # type: ignore
+
+    # === TOPK OPERATION ===
+    def _topk(self, config: TopKConfig) -> Sequence[T]:
+        return self._topk_toolz(config)
+
+    def _topk_toolz(self, config: TopKConfig) -> list[T]:
+        """Возвращает k наибольших элементов"""
+        if config.key:
+            return list(toolz_topk(config.k, self.data, key=config.key))
+        else:
+            return list(toolz_topk(config.k, self.data))
+
+    # === REMOVE OPERATION ===
+    def _remove(self, config: RemoveConfig) -> Sequence[T]:
+        return self._remove_toolz(config)
+
+    def _remove_toolz(self, config: RemoveConfig) -> list[T]:
+        """Удаляет элементы, удовлетворяющие предикату"""
+        return list(toolz_remove(config.predicate, self.data))
+
+    # === ACCUMULATE OPERATION ===
+    def _accumulate(self, config: AccumulateConfig) -> Sequence[Any]:
+        return self._accumulate_toolz(config)
+
+    def _accumulate_toolz(self, config: AccumulateConfig) -> list[Any]:
+        """Накопительное применение функции"""
+        if config.initial is not None:
+            return list(toolz_accumulate(config.func, self.data, config.initial))  # type: ignore
+        else:
+            return list(toolz_accumulate(config.func, self.data))  # type: ignore
+
+    # === JOIN OPERATION ===
+    def _join(self, config: JoinConfig) -> Sequence[Any]:
+        return self._join_toolz(config)
+
+    def _join_toolz(self, config: JoinConfig) -> list[Any]:
+        """Объединение двух последовательностей по ключу"""
+        return list(
+            toolz_join(config.left_key, self.data, config.right_key, config.right_data)  # type: ignore
+        )
+
+
+def _should_process[U](result: U) -> bool:  # type: ignore
+    return isinstance(result, Sequence) and not isinstance(result, (str, bytes))
+
+
+# === ДЕКОРАТОР UNIQUE ===
+@overload
+def unique[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def unique[**P, R: Sequence[Any]](
+    *,
+    key: Optional[Callable[[Any], Hashable]] = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def unique[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    key: Optional[Callable[[Any], Hashable]] = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result):
+                processor = ArrayProcessor(result)
+                config = UniqueConfig(key=key)
+                processed = processor.process(
+                    operation=OperationType.Unique,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР SLICE ===
+@overload
+def slice[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def slice[**P, R: Sequence[Any]](
+    *,
+    start: Optional[int] = None,
+    stop: Optional[int] = None,
+    step: Optional[int] = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def slice[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    start: Optional[int] = None,
+    stop: Optional[int] = None,
+    step: Optional[int] = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result):
+                processor = ArrayProcessor(result)
+                config = SliceConfig(start=start, stop=stop, step=step)
+                processed = processor.process(
+                    operation=OperationType.Slice,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР SORT ===
+@overload
+def sort[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def sort[**P, R: Sequence[Any]](
+    *,
+    key: Optional[Callable[[Any], Any]] = None,
+    reverse: bool = False,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def sort[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    key: Optional[Callable[[Any], Any]] = None,
+    reverse: bool = False,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result):
+                processor = ArrayProcessor(result)
+                config = SortConfig(key=key, reverse=reverse)
+                processed = processor.process(
+                    operation=OperationType.Sort,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР FILTER ===
+@overload
+def filter[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def filter[**P, R: Sequence[Any]](
+    *,
+    predicate: Callable[[Any], bool],
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def filter[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    predicate: Callable[[Any], bool] | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and predicate:
+                processor = ArrayProcessor(result)
+                config = FilterConfig(predicate=predicate)
+                processed = processor.process(
+                    operation=OperationType.Filter,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР MAP ===
+@overload
+def map[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def map[**P, R: Sequence[Any]](
+    *,
+    transform: Callable[[Any], Any],
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def map[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    transform: Callable[[Any], Any] | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and transform:
+                processor = ArrayProcessor(result)
+                config = MapConfig(transform=transform)
+                processed = processor.process(
+                    operation=OperationType.Map,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР GROUPBY ===
+@overload
+def groupby[**P, R: Sequence[Any]](
+    func: Callable[P, R],
+) -> Callable[P, dict[Hashable, list[Any]]]: ...
+
+
+@overload
+def groupby[**P](
+    *,
+    key: Callable[[Any], Hashable],
+) -> Callable[[Callable[P, Sequence[Any]]], Callable[P, dict[Hashable, list[Any]]]]: ...
+
+
+def groupby[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    key: Callable[[Any], Hashable] | None = None,
+) -> (
+    Callable[P, dict[Hashable, list[Any]]]
+    | Callable[[Callable[P, R]], Callable[P, dict[Hashable, list[Any]]]]
+):
+    def decorator(f: Callable[P, R]) -> Callable[P, dict[Hashable, list[Any]]]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[Hashable, list[Any]]:
+            result = f(*args, **kwargs)
+            if _should_process(result) and key:
+                processor = ArrayProcessor(result)
+                config = GroupByConfig(key=key)
+                processed = processor.process(
+                    operation=OperationType.GroupBy,
+                    config=config,
+                )
+                return cast(dict[Hashable, list[Any]], processed)
+            return {}  # type: ignore
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР FLATTEN ===
+@overload
+def flatten[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def flatten[**P, R: Sequence[Any]](
+    *,
+    level: int = 1,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def flatten[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    level: int = 1,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result):
+                processor = ArrayProcessor(result)
+                config = FlattenConfig(level=level)
+                processed = processor.process(
+                    operation=OperationType.Flatten,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР CHUNK ===
+@overload
+def chunk[**P, R: Sequence[Any]](
+    func: Callable[P, R],
+) -> Callable[P, list[list[Any]]]: ...
+
+
+@overload
+def chunk[**P](
+    *,
+    size: int,
+) -> Callable[[Callable[P, Sequence[Any]]], Callable[P, list[list[Any]]]]: ...
+
+
+def chunk[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    size: int | None = None,
+) -> (
+    Callable[P, list[list[Any]]]
+    | Callable[[Callable[P, R]], Callable[P, list[list[Any]]]]
+):
+    def decorator(f: Callable[P, R]) -> Callable[P, list[list[Any]]]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> list[list[Any]]:
+            result = f(*args, **kwargs)
+            if _should_process(result) and size:
+                processor = ArrayProcessor(result)
+                config = ChunkConfig(size=size)
+                processed = processor.process(
+                    operation=OperationType.Chunk,
+                    config=config,
+                )
+                return cast(list[list[Any]], processed)
+            return []  # type: ignore
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР TAKE ===
+@overload
+def take[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def take[**P, R: Sequence[Any]](
+    *,
+    n: int,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def take[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    n: int | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and n is not None:
+                processor = ArrayProcessor(result)
+                config = TakeConfig(n=n)
+                processed = processor.process(
+                    operation=OperationType.Take,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР DROP ===
+@overload
+def drop[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def drop[**P, R: Sequence[Any]](
+    *,
+    n: int,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def drop[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    n: int | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and n is not None:
+                processor = ArrayProcessor(result)
+                config = DropConfig(n=n)
+                processed = processor.process(
+                    operation=OperationType.Drop,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР INTERPOSE ===
+@overload
+def interpose[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def interpose[**P, R: Sequence[Any]](
+    *,
+    separator: Any,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def interpose[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    separator: Any | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and separator is not None:
+                processor = ArrayProcessor(result)
+                config = InterposeConfig(separator=separator)
+                processed = processor.process(
+                    operation=OperationType.Interpose,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР PLUCK ===
+@overload
+def pluck[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def pluck[**P, R: Sequence[Any]](
+    *,
+    key: str | int | Sequence[str | int],
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def pluck[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    key: str | int | Sequence[str | int] | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and key is not None:
+                processor = ArrayProcessor(result)
+                config = PluckConfig(key=key)
+                processed = processor.process(
+                    operation=OperationType.Pluck,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР DIFF ===
+@overload
+def diff[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def diff[**P, R: Sequence[Any]](
+    *,
+    default: Any = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def diff[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    default: Any | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result):
+                processor = ArrayProcessor(result)
+                config = DiffConfig(default=default)
+                processed = processor.process(
+                    operation=OperationType.Diff,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР TOPK ===
+@overload
+def topk[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def topk[**P, R: Sequence[Any]](
+    *,
+    k: int,
+    key: Optional[Callable[[Any], Any]] = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def topk[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    k: int | None = None,
+    key: Optional[Callable[[Any], Any]] = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and k is not None:
+                processor = ArrayProcessor(result)
+                config = TopKConfig(k=k, key=key)
+                processed = processor.process(
+                    operation=OperationType.TopK,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР REMOVE ===
+@overload
+def remove[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def remove[**P, R: Sequence[Any]](
+    *,
+    predicate: Callable[[Any], bool],
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def remove[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    predicate: Callable[[Any], bool] | None = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and predicate:
+                processor = ArrayProcessor(result)
+                config = RemoveConfig(predicate=predicate)
+                processed = processor.process(
+                    operation=OperationType.Remove,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР ACCUMULATE ===
+# === ДЕКОРАТОР ACCUMULATE ===
+@overload
+def accumulate[**P, R: Sequence[Any]](func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
+def accumulate[**P, R: Sequence[Any]](
+    *,
+    func: Callable[[Any, Any], Any],  # Сохраняем оригинальное имя в API
+    initial: Optional[Any] = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def accumulate[**P, R: Sequence[Any]](  # type: ignore
+    decorated_func: Callable[P, R] | None = None,  # Переименовываем первый параметр
+    *,
+    func: Callable[..., Any] | None = None,
+    initial: Optional[Any] = None,
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            result = f(*args, **kwargs)
+            if _should_process(result) and func is not None:
+                processor = ArrayProcessor(result)
+                config = AccumulateConfig(func=func, initial=initial)
+                processed = processor.process(
+                    operation=OperationType.Accumulate,
+                    config=config,
+                )
+                return cast(R, processed)
+            return result
+
+        return wrapper
+
+    if decorated_func is None:  # Используем переименованный параметр
+        return decorator
+    else:
+        return decorator(decorated_func)  # Используем переименованный параметр
+
+
+# === ДЕКОРАТОР JOIN ===
+@overload
+def join[**P, R: Sequence[Any]](
+    func: Callable[P, R],
+) -> Callable[P, list[Any]]: ...
+
+
+@overload
+def join[**P, R: Sequence[Any]](
+    *,
+    left_key: Callable[[Any], Hashable],
+    right_data: Sequence[Any],
+    right_key: Callable[[Any], Hashable],
+) -> Callable[[Callable[P, R]], Callable[P, list[Any]]]: ...  # type: ignore
+
+
+def join[**P, R: Sequence[Any]](
+    func: Callable[P, R] | None = None,
+    left_key: Callable[[Any], Hashable] | None = None,
+    right_data: Sequence[Any] | None = None,
+    right_key: Callable[[Any], Hashable] | None = None,
+) -> Callable[P, list[Any]] | Callable[[Callable[P, R]], Callable[P, list[Any]]]:
+    def decorator(f: Callable[P, R]) -> Callable[P, list[Any]]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> list[Any]:
+            result = f(*args, **kwargs)
+            if (
+                _should_process(result)
+                and left_key is not None
+                and right_data is not None
+                and right_key is not None
+            ):
+                processor = ArrayProcessor(result)
+                config = JoinConfig(
+                    left_key=left_key, right_data=right_data, right_key=right_key
+                )
+                processed = processor.process(
+                    operation=OperationType.Join,
+                    config=config,
+                )
+                return cast(list[Any], processed)
+            return []  # type: ignore
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ФАБРИКА F ДЛЯ KEY-ФУНКЦИЙ ===
+def F(*field_paths: str) -> Callable[[JsonDict], Hashable]:
+    def _get_nested_value(item: JsonDict, field_path: str) -> JsonValue:
+        keys = field_path.split(".")
+        current: JsonValue = item
+        for key in keys:
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            else:
+                return None  # Возвращаем None вместо исключения для большей гибкости
+        return current
+
+    def key_func(item: JsonDict) -> Hashable:
+        if len(field_paths) == 1:
+            value = _get_nested_value(item, field_paths[0])
+            return cast(Hashable, value)
+        else:
+            values = tuple(_get_nested_value(item, path) for path in field_paths)
+            return cast(Hashable, values)
+
+    return key_func
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from __future__ import annotations
+import functools
+from enum import Enum, auto
+from typing import (
+    Callable,
+    overload,
+    Sequence,
+    Optional,
+    Any,
+    Union,
+    Literal,
+    cast,
+)
+import math
+import statistics
+import json
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+import re
+import base64
+
+# Типы для данных
+StringOrNumber = Union[str, int, float]
+
+
+class TextOperationType(Enum):
+    AddToStart = auto()
+    AddToEnd = auto()
+    AddTo = auto()
+    Format = auto()
+    Split = auto()
+    Calc = auto()
+    Power = auto()
+    MathOp = auto()
+
+
+class TextOperationConfig:
+    pass
+
+
+class AddToStartConfig(TextOperationConfig):
+    def __init__(self, text: str):
+        self.text = text
+
+
+class AddToEndConfig(TextOperationConfig):
+    def __init__(self, text: str):
+        self.text = text
+
+
+class AddToConfig(TextOperationConfig):
+    def __init__(self, text: str, position: Literal["start", "end"]):
+        self.text = text
+        self.position = position
+
+
+class FormatConfig(TextOperationConfig):
+    def __init__(self, template: str, **kwargs: Any):
+        self.template = template
+        self.kwargs = kwargs
+
+
+class SplitConfig(TextOperationConfig):
+    def __init__(self, separator: Optional[str] = None):
+        self.separator = separator
+
+
+class CalcConfig(TextOperationConfig):
+    def __init__(self, operation: Callable[[Any], Any], **kwargs: Any):
+        self.operation = operation
+        self.kwargs = kwargs
+
+
+class PowerConfig(TextOperationConfig):
+    def __init__(self, exponent: float):
+        self.exponent = exponent
+
+
+class MathOpConfig(TextOperationConfig):
+    def __init__(self, operation: str, value: float):
+        self.operation = operation
+        self.value = value
+
+
+class TextProcessor:
+    """Процессор для работы со строками и числами"""
+
+    def __init__(self, data: StringOrNumber):
+        self.data = data
+
+    def process(
+        self,
+        operation: TextOperationType,
+        config: TextOperationConfig,
+    ) -> StringOrNumber | Sequence[str]:
+        return self._try_operation(operation, config)
+
+    def _try_operation(
+        self, operation: TextOperationType, config: TextOperationConfig
+    ) -> StringOrNumber | Sequence[str]:
+        match operation:
+            case TextOperationType.AddToStart:
+                return self._add_to_start(config)  # type: ignore
+            case TextOperationType.AddToEnd:
+                return self._add_to_end(config)  # type: ignore
+            case TextOperationType.AddTo:
+                return self._add_to(config)  # type: ignore
+            case TextOperationType.Format:
+                return self._format(config)  # type: ignore
+            case TextOperationType.Split:
+                return self._split(config)  # type: ignore
+            case TextOperationType.Calc:
+                return self._calc(config)  # type: ignore
+            case TextOperationType.Power:
+                return self._power(config)  # type: ignore
+            case TextOperationType.MathOp:
+                return self._math_operation(config)  # type: ignore
+            case _:
+                raise ValueError(f"Неизвестная операция: {operation}")
+
+    def _add_to_start(self, config: AddToStartConfig) -> str:
+        """Добавляет текст в начало"""
+        return config.text + str(self.data)
+
+    def _add_to_end(self, config: AddToEndConfig) -> str:
+        """Добавляет текст в конец"""
+        return str(self.data) + config.text
+
+    def _add_to(self, config: AddToConfig) -> str:
+        """Добавляет текст в указанную позицию"""
+        if config.position == "start":
+            return config.text + str(self.data)
+        else:
+            return str(self.data) + config.text
+
+    def _format(self, config: FormatConfig) -> str:
+        """Форматирует результат по шаблону"""
+        result_str = str(self.data)
+        # Заменяем {origin} на исходный результат
+        formatted = config.template.replace("{origin}", result_str)
+
+        # Заменяем другие плейсхолдеры из kwargs
+        for key, value in config.kwargs.items():
+            placeholder = "{" + key + "}"
+            formatted = formatted.replace(placeholder, str(value))
+
+        return formatted
+
+    def _split(self, config: SplitConfig) -> Sequence[str]:
+        """Разделяет строку на слова (только для строк)"""
+        if not isinstance(self.data, str):
+            return [str(self.data)]
+
+        if config.separator is not None:
+            return self.data.split(config.separator)
+        else:
+            # Разделение по пробелам по умолчанию
+            return self.data.split()
+
+    def _calc(self, config: CalcConfig) -> StringOrNumber:
+        """Применяет функцию к числу (только для чисел)"""
+        if not isinstance(self.data, (int, float)):
+            return self.data
+
+        try:
+            return config.operation(self.data, **config.kwargs)
+        except Exception:
+            return self.data
+
+    def _power(self, config: PowerConfig) -> StringOrNumber:
+        """Возводит число в степень (только для чисел)"""
+        if not isinstance(self.data, (int, float)):
+            return self.data
+
+        try:
+            return self.data**config.exponent
+        except Exception:
+            return self.data
+
+    def _math_operation(self, config: MathOpConfig) -> StringOrNumber:
+        """Выполняет математическую операцию (только для чисел)"""
+        if not isinstance(self.data, (int, float)):
+            return self.data
+
+        try:
+            if config.operation == "add":
+                return self.data + config.value
+            elif config.operation == "subtract":
+                return self.data - config.value
+            elif config.operation == "multiply":
+                return self.data * config.value
+            elif config.operation == "divide":
+                if config.value == 0:
+                    return self.data
+                return self.data / config.value
+            elif config.operation == "modulo":
+                if config.value == 0:
+                    return self.data
+                return self.data % config.value
+            else:
+                return self.data
+        except Exception:
+            return self.data
+
+
+def _should_process_text(value: Any) -> bool:
+    """Проверяет, можно ли обработать значение"""
+    return isinstance(value, (str, int, float))
+
+
+# === ДЕКОРАТОР ADD_TO_START ===
+@overload
+def add_to_start(func: Callable[..., str | int | float]) -> Callable[..., str]: ...
+
+
+@overload
+def add_to_start(
+    *, text: str
+) -> Callable[[Callable[..., str | int | float]], Callable[..., str]]: ...
+
+
+def add_to_start(
+    func: Callable[..., str | int | float] | None = None,
+    *,
+    text: str | None = None,
+) -> (
+    Callable[..., str]
+    | Callable[[Callable[..., str | int | float]], Callable[..., str]]
+):
+
+    if text is None:
+        raise ValueError("Text parameter is required")
+
+    def decorator(f: Callable[..., str | int | float]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = AddToStartConfig(text=text)
+                processed = processor.process(
+                    operation=TextOperationType.AddToStart,
+                    config=config,
+                )
+                return cast(str, processed)
+            return str(result)
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР ADD_TO_END ===
+@overload
+def add_to_end(func: Callable[..., str | int | float]) -> Callable[..., str]: ...
+
+
+@overload
+def add_to_end(
+    *, text: str
+) -> Callable[[Callable[..., str | int | float]], Callable[..., str]]: ...
+
+
+def add_to_end(
+    func: Callable[..., str | int | float] | None = None,
+    *,
+    text: str | None = None,
+) -> (
+    Callable[..., str]
+    | Callable[[Callable[..., str | int | float]], Callable[..., str]]
+):
+
+    if text is None:
+        raise ValueError("Text parameter is required")
+
+    def decorator(f: Callable[..., str | int | float]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = AddToEndConfig(text=text)
+                processed = processor.process(
+                    operation=TextOperationType.AddToEnd,
+                    config=config,
+                )
+                return cast(str, processed)
+            return str(result)
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР ADD_TO ===
+@overload
+def add_to(func: Callable[..., str | int | float]) -> Callable[..., str]: ...
+
+
+@overload
+def add_to(
+    *, text: str, position: Literal["start", "end"]
+) -> Callable[[Callable[..., str | int | float]], Callable[..., str]]: ...
+
+
+def add_to(
+    func: Callable[..., str | int | float] | None = None,
+    *,
+    text: str | None = None,
+    position: Literal["start", "end"] = "start",
+) -> (
+    Callable[..., str]
+    | Callable[[Callable[..., str | int | float]], Callable[..., str]]
+):
+
+    if text is None:
+        raise ValueError("Text parameter is required")
+
+    def decorator(f: Callable[..., str | int | float]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = AddToConfig(text=text, position=position)
+                processed = processor.process(
+                    operation=TextOperationType.AddTo,
+                    config=config,
+                )
+                return cast(str, processed)
+            return str(result)
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР FORMATTER ===
+def formatter(
+    template: str,
+    **kwargs: Any,
+) -> Callable[[Callable[..., str | int | float]], Callable[..., str]]:
+    def decorator(f: Callable[..., str | int | float]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs_inner: Any) -> str:
+            result = f(*args, **kwargs_inner)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = FormatConfig(template=template, **kwargs)
+                processed = processor.process(
+                    operation=TextOperationType.Format,
+                    config=config,
+                )
+                return cast(str, processed)
+            return str(result)
+
+        return wrapper
+
+    return decorator
+
+
+# === ДЕКОРАТОР SPLIT_STR ===
+@overload
+def split_str[**P, R: StringOrNumber](
+    func: Callable[P, R],
+) -> Callable[P, Sequence[str]]: ...
+
+
+@overload
+def split_str[**P, R: StringOrNumber](
+    *,
+    separator: Optional[str] = None,
+) -> Callable[[Callable[P, R]], Callable[P, Sequence[str] | R]]: ...
+
+
+def split_str[**P, R: StringOrNumber](
+    func: Callable[P, R] | None = None,
+    *,
+    separator: Optional[str] = None,
+) -> (
+    Callable[P, Sequence[str]]
+    | Callable[[Callable[P, R]], Callable[P, Sequence[str] | R]]
+):
+    def decorator(f: Callable[P, R]) -> Callable[P, Sequence[str]]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> Sequence[str]:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = SplitConfig(separator=separator)
+                processed = processor.process(
+                    operation=TextOperationType.Split,
+                    config=config,
+                )
+                return cast(Sequence[str], processed)
+            return [str(result)]
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР POWER ===
+@overload
+def power(
+    func: Callable[..., str | int | float],
+) -> Callable[..., str | int | float]: ...
+
+
+@overload
+def power(
+    *, exponent: float
+) -> Callable[[Callable[..., str | int | float]], Callable[..., str | int | float]]: ...
+
+
+def power(
+    func: Callable[..., str | int | float] | None = None,
+    *,
+    exponent: float | None = None,
+) -> (
+    Callable[..., str | int | float]
+    | Callable[[Callable[..., str | int | float]], Callable[..., str | int | float]]
+):
+
+    if exponent is None:
+        raise ValueError("Exponent parameter is required")
+
+    def decorator(
+        f: Callable[..., str | int | float],
+    ) -> Callable[..., str | int | float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str | int | float:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = PowerConfig(exponent=exponent)
+                processed = processor.process(
+                    operation=TextOperationType.Power,
+                    config=config,
+                )
+                return cast(str | int | float, processed)
+            return result
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+# === ДЕКОРАТОР CALC ===
+def calc(
+    operation: Callable[..., int | float],
+    **kwargs: Any,
+) -> Callable[[Callable[..., int | float]], Callable[..., int | float]]:
+    def decorator(f: Callable[..., int | float]) -> Callable[..., int | float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs_inner: Any) -> int | float:
+            result = f(*args, **kwargs_inner)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = CalcConfig(operation=operation, **kwargs)
+                processed = processor.process(
+                    operation=TextOperationType.Calc,
+                    config=config,
+                )
+                if isinstance(processed, (int, float)):
+                    return processed
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+# === ДЕКОРАТОР MATH OPERATIONS ===
+def add[**P, R: StringOrNumber](
+    value: float,
+) -> Callable[[Callable[P, R]], Callable[P, StringOrNumber | R]]:
+    """Добавляет значение к числу"""
+
+    def decorator(f: Callable[P, R]) -> Callable[P, StringOrNumber]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> StringOrNumber:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = MathOpConfig(operation="add", value=value)
+                processed = processor.process(
+                    operation=TextOperationType.MathOp,
+                    config=config,
+                )
+                return cast(StringOrNumber, processed)
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+def subtract[**P, R: StringOrNumber](
+    value: float,
+) -> Callable[[Callable[P, R]], Callable[P, StringOrNumber | R]]:
+    """Вычитает значение из числа"""
+
+    def decorator(f: Callable[P, R]) -> Callable[P, StringOrNumber]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> StringOrNumber:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = MathOpConfig(operation="subtract", value=value)
+                processed = processor.process(
+                    operation=TextOperationType.MathOp,
+                    config=config,
+                )
+                return cast(StringOrNumber, processed)
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+def multiply[**P, R: StringOrNumber](
+    value: float,
+) -> Callable[[Callable[P, R]], Callable[P, StringOrNumber | R]]:
+    """Умножает число на значение"""
+
+    def decorator(f: Callable[P, R]) -> Callable[P, StringOrNumber]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> StringOrNumber:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = MathOpConfig(operation="multiply", value=value)
+                processed = processor.process(
+                    operation=TextOperationType.MathOp,
+                    config=config,
+                )
+                return cast(StringOrNumber, processed)
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+def divide[**P, R: StringOrNumber](
+    value: float,
+) -> Callable[[Callable[P, R]], Callable[P, StringOrNumber | R]]:
+    """Делит число на значение"""
+
+    def decorator(f: Callable[P, R]) -> Callable[P, StringOrNumber]:
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> StringOrNumber:
+            result = f(*args, **kwargs)
+            if _should_process_text(result):
+                processor = TextProcessor(result)
+                config = MathOpConfig(operation="divide", value=value)
+                processed = processor.process(
+                    operation=TextOperationType.MathOp,
+                    config=config,
+                )
+                return cast(StringOrNumber, processed)
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+# === СЛОЖНЫЕ ЧИСЛОВЫЕ ДЕКОРАТОРЫ ===
+
+
+def round_to(
+    decimals: int = 0,
+) -> Callable[[Callable[..., int | float]], Callable[..., int | float]]:
+    """Округление до указанного количества знаков"""
+
+    def decorator(f: Callable[..., int | float]) -> Callable[..., int | float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> int | float:
+            result = f(*args, **kwargs)
+            return round(result, decimals)
+
+        return wrapper
+
+    return decorator
+
+
+def clamp(
+    min_val: float, max_val: float
+) -> Callable[[Callable[..., int | float]], Callable[..., float]]:
+    """Ограничение значения в диапазоне"""
+
+    def decorator(f: Callable[..., int | float]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            result = f(*args, **kwargs)
+            return max(min_val, min(max_val, float(result)))
+
+        return wrapper
+
+    return decorator
+
+
+def normalize(
+    min_val: float = 0, max_val: float = 1
+) -> Callable[[Callable[..., int | float]], Callable[..., float]]:
+    """Нормализация значения в диапазон [0, 1] или указанный"""
+
+    def decorator(f: Callable[..., int | float]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            result = f(*args, **kwargs)
+            # Для демонстрации используем фиксированный исходный диапазон
+            original_min, original_max = 0, 100
+            normalized = (result - original_min) / (original_max - original_min)
+            return min_val + normalized * (max_val - min_val)
+
+        return wrapper
+
+    return decorator
+
+
+def logarithmic(
+    base: float = 10,
+) -> Callable[[Callable[..., int | float]], Callable[..., float]]:
+    """Логарифмическое преобразование"""
+
+    def decorator(f: Callable[..., int | float]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            result = f(*args, **kwargs)
+            return math.log(result, base)
+
+        return wrapper
+
+    return decorator
+
+
+def percentage(
+    total: float = 100,
+) -> Callable[[Callable[..., int | float]], Callable[..., float]]:
+    """Преобразование в проценты"""
+
+    def decorator(f: Callable[..., int | float]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            result = f(*args, **kwargs)
+            return (result / total) * 100
+
+        return wrapper
+
+    return decorator
+
+
+def scientific_notation(
+    precision: int = 2,
+) -> Callable[[Callable[..., int | float]], Callable[..., str]]:
+    """Преобразование в научную нотацию"""
+
+    def decorator(f: Callable[..., int | float]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            return f"{result:.{precision}e}"
+
+        return wrapper
+
+    return decorator
+
+
+# === СТАТИСТИЧЕСКИЕ ОПЕРАЦИИ ===
+
+
+def moving_average(
+    window: int = 3,
+) -> Callable[[Callable[..., list[int | float]]], Callable[..., list[float]]]:
+    """Скользящее среднее для списков чисел"""
+
+    def decorator(f: Callable[..., list[int | float]]) -> Callable[..., list[float]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> list[float]:
+            result = f(*args, **kwargs)
+            return [
+                statistics.mean(result[max(0, i - window + 1) : i + 1])
+                for i in range(len(result))
+            ]
+
+        return wrapper
+
+    return decorator
+
+
+def z_score() -> (
+    Callable[[Callable[..., list[int | float]]], Callable[..., list[float]]]
+):
+    """Z-оценка для нормализации данных"""
+
+    def decorator(f: Callable[..., list[int | float]]) -> Callable[..., list[float]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> list[float]:
+            result = f(*args, **kwargs)
+            mean_val = statistics.mean(result)
+            try:
+                stdev_val = statistics.stdev(result)
+                # Если стандартное отклонение равно 0, все элементы одинаковы
+                # В этом случае z-оценки будут 0 для всех элементов
+                if stdev_val == 0:
+                    return [0.0 for _ in result]
+                return [(x - mean_val) / stdev_val for x in result]
+            except statistics.StatisticsError:
+                # Обработка случаев, когда stdev не может быть вычислено
+                return [0.0 for _ in result]
+
+        return wrapper
+
+    return decorator
+
+
+# === СЛОЖНЫЕ СТРОКОВЫЕ ДЕКОРАТОРЫ ===
+
+
+def regex_extract(
+    pattern: str, group: int = 0
+) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Извлечение текста по регулярному выражению"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            match = re.search(pattern, result)
+            return match.group(group) if match else ""
+
+        return wrapper
+
+    return decorator
+
+
+def regex_replace(
+    pattern: str, replacement: str
+) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Замена по регулярному выражению"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+
+            return re.sub(pattern, replacement, result)
+
+        return wrapper
+
+    return decorator
+
+
+def case_transform(
+    case_type: str,
+) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Трансформация регистра"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            if case_type == "upper":
+                return result.upper()
+            elif case_type == "lower":
+                return result.lower()
+            elif case_type == "title":
+                return result.title()
+            elif case_type == "swapcase":
+                return result.swapcase()
+            elif case_type == "capitalize":
+                return result.capitalize()
+            else:
+                return result
+
+        return wrapper
+
+    return decorator
+
+
+def hash_string(
+    algorithm: str = "md5",
+) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Хеширование строки"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            if algorithm == "md5":
+                return hashlib.md5(result.encode()).hexdigest()
+            elif algorithm == "sha1":
+                return hashlib.sha1(result.encode()).hexdigest()
+            elif algorithm == "sha256":
+                return hashlib.sha256(result.encode()).hexdigest()
+            return ""
+
+        return wrapper
+
+    return decorator
+
+
+def encode_base64() -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Base64 кодирование"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            return base64.b64encode(result.encode()).decode()
+
+        return wrapper
+
+    return decorator
+
+
+def decode_base64() -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Base64 декодирование"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            try:
+                return base64.b64decode(result.encode()).decode()
+            except Exception:
+                return ""
+
+        return wrapper
+
+    return decorator
+
+
+def slugify() -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Транслитерация в slug"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            # Простая реализация slugify
+            slug = result.lower()
+            slug = re.sub(r"[^a-z0-9]+", "-", slug)
+            slug = slug.strip("-")
+            return slug
+
+        return wrapper
+
+    return decorator
+
+
+def truncate(
+    max_length: int, suffix: str = "..."
+) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Обрезка строки с добавлением суффикса"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            return result[: max_length - len(suffix)] + suffix
+
+        return wrapper
+
+    return decorator
+
+
+def trigonometric(
+    operation: str,
+) -> Callable[[Callable[..., float]], Callable[..., float]]:
+    """Тригонометрические функции"""
+
+    def decorator(f: Callable[..., float]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            result = f(*args, **kwargs)
+            rad = math.radians(result)  # предполагаем ввод в градусах
+            if operation == "sin":
+                return math.sin(rad)
+            elif operation == "cos":
+                return math.cos(rad)
+            elif operation == "tan":
+                return math.tan(rad)
+            else:
+                return rad
+
+        return wrapper
+
+    return decorator
+
+
+def format_datetime(
+    format_str: str = "%Y-%m-%d %H:%M:%S",
+) -> Callable[[Callable[..., datetime]], Callable[..., str]]:
+    """Форматирование datetime в строку"""
+
+    def decorator(f: Callable[..., datetime]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            return result.strftime(format_str)
+
+        return wrapper
+
+    return decorator
+
+
+def add_timedelta(
+    **delta_kwargs: Any,
+) -> Callable[[Callable[..., datetime]], Callable[..., datetime]]:
+    """Добавление временного интервала к datetime"""
+
+    def decorator(f: Callable[..., datetime]) -> Callable[..., datetime]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> datetime:
+            result = f(*args, **kwargs)
+            return result + timedelta(**delta_kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def timestamp() -> Callable[[Callable[..., datetime]], Callable[..., float]]:
+    """Преобразование datetime в timestamp"""
+
+    def decorator(f: Callable[..., datetime]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            result = f(*args, **kwargs)
+            return result.timestamp()
+
+        return wrapper
+
+    return decorator
+
+
+def currency_format(
+    currency: str = "USD", decimals: int = 2
+) -> Callable[[Callable[..., float]], Callable[..., str]]:
+    """Форматирование валюты"""
+
+    def decorator(f: Callable[..., float]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            return f"{currency} {result:,.{decimals}f}"
+
+        return wrapper
+
+    return decorator
+
+
+def compound_interest(
+    periods: int, rate: float
+) -> Callable[[Callable[..., float]], Callable[..., float]]:
+    """Расчет сложного процента"""
+
+    def decorator(f: Callable[..., float]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            principal = f(*args, **kwargs)
+            return principal * (1 + rate) ** periods
+
+        return wrapper
+
+    return decorator
+
+
+def tax_calculation(
+    tax_rate: float,
+) -> Callable[[Callable[..., float]], Callable[..., tuple[float, float]]]:
+    """Расчет налога и чистой суммы"""
+
+    def decorator(f: Callable[..., float]) -> Callable[..., tuple[float, float]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> tuple[float, float]:
+            amount = f(*args, **kwargs)
+            tax = amount * tax_rate
+            net_amount = amount - tax
+            return net_amount, tax
+
+        return wrapper
+
+    return decorator
+
+
+def distance_to(
+    lat: float, lon: float
+) -> Callable[[Callable[..., tuple[float, float]]], Callable[..., float]]:
+    """Расчет расстояния между двумя точками (в км)"""
+
+    def decorator(f: Callable[..., tuple[float, float]]) -> Callable[..., float]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> float:
+            point_lat, point_lon = f(*args, **kwargs)
+
+            # Формула гаверсинусов
+            R = 6371  # Радиус Земли в км
+            dlat = math.radians(lat - point_lat)
+            dlon = math.radians(lon - point_lon)
+            a = math.sin(dlat / 2) * math.sin(dlat / 2) + math.cos(
+                math.radians(point_lat)
+            ) * math.cos(math.radians(lat)) * math.sin(dlon / 2) * math.sin(dlon / 2)
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c
+
+        return wrapper
+
+    return decorator
+
+
+def coordinate_format(
+    format_type: str = "dms",
+) -> Callable[[Callable[..., tuple[float, float]]], Callable[..., str]]:
+    """Форматирование координат"""
+
+    def decorator(f: Callable[..., tuple[float, float]]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            lat, lon = f(*args, **kwargs)
+
+            if format_type == "dms":
+
+                def to_dms(coord: float) -> str:
+                    degrees = int(coord)
+                    minutes = int((coord - degrees) * 60)
+                    seconds = (coord - degrees - minutes / 60) * 3600
+                    return f"{degrees}°{minutes}'{seconds:.2f}\""
+
+                return f"{to_dms(lat)} N, {to_dms(lon)} E"
+            else:
+                return f"{lat:.6f}, {lon:.6f}"
+
+        return wrapper
+
+    return decorator
+
+
+def one_hot_encode(
+    categories: list[str],
+) -> Callable[[Callable[..., str]], Callable[..., dict[str, int]]]:
+    """One-hot encoding для категориальных данных"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., dict[str, int]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> dict[str, int]:
+            result = f(*args, **kwargs)
+            return {category: 1 if category == result else 0 for category in categories}
+
+        return wrapper
+
+    return decorator
+
+
+def min_max_scale(
+    feature_range: tuple[float, float] = (0, 1)
+) -> Callable[[Callable[..., list[float]]], Callable[..., list[float]]]:
+    """Масштабирование признаков"""
+
+    def decorator(f: Callable[..., list[float]]) -> Callable[..., list[float]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> list[float]:
+            data = f(*args, **kwargs)
+            if not data:
+                return []
+
+            min_val = min(data)
+            max_val = max(data)
+
+            if max_val == min_val:
+                return [feature_range[0]] * len(data)
+
+            scaled = [
+                feature_range[0]
+                + (x - min_val)
+                * (feature_range[1] - feature_range[0])
+                / (max_val - min_val)
+                for x in data
+            ]
+            return scaled
+
+        return wrapper
+
+    return decorator
+
+
+def feature_engineering(
+    operations: list[str],
+) -> Callable[[Callable[..., list[float]]], Callable[..., dict[str, float]]]:
+    """Инженерия признаков"""
+
+    def decorator(f: Callable[..., list[float]]) -> Callable[..., dict[str, float]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> dict[str, float]:
+            data = f(*args, **kwargs)
+            features = {}
+
+            if "mean" in operations:
+                features["mean"] = statistics.mean(data) if data else 0
+            if "std" in operations:
+                features["std"] = statistics.stdev(data) if len(data) > 1 else 0
+            if "min" in operations:
+                features["min"] = min(data) if data else 0
+            if "max" in operations:
+                features["max"] = max(data) if data else 0
+            if "range" in operations:
+                features["range"] = features.get("max", 0) - features.get("min", 0)
+
+            return features
+
+        return wrapper
+
+    return decorator
+
+
+def json_serialize() -> Callable[[Callable[..., Any]], Callable[..., str]]:
+    """Сериализация в JSON"""
+
+    def decorator(f: Callable[..., Any]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            result = f(*args, **kwargs)
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        return wrapper
+
+    return decorator
+
+
+def api_response(
+    status: str = "success",
+) -> Callable[[Callable[..., Any]], Callable[..., dict[str, Any]]]:
+    """Форматирование API ответа"""
+
+    def decorator(f: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            try:
+                data = f(*args, **kwargs)
+                return {
+                    "status": status,
+                    "data": data,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat(),
+                }
+
+        return wrapper
+
+    return decorator
+
+
+def validate_schema(
+    schema: dict[str, type],
+) -> Callable[[Callable[..., dict[str, Any]]], Callable[..., dict[str, Any]]]:
+    """Валидация данных по схеме"""
+
+    def decorator(f: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            data = f(*args, **kwargs)
+            validated = {}
+            errors = []
+
+            for key, expected_type in schema.items():
+                if key in data:
+                    if isinstance(data[key], expected_type):
+                        validated[key] = data[key]
+                    else:
+                        errors.append(
+                            f"Field '{key}' should be {expected_type.__name__}"
+                        )
+                else:
+                    errors.append(f"Missing required field: '{key}'")
+
+            if errors:
+                return {"valid": False, "errors": errors}
+            return {"valid": True, "data": validated}
+
+        return wrapper
+
+    return decorator
+
+
+def hash_sensitive(
+    algorithm: str = "sha256", salt_length: int = 16
+) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Хеширование чувствительных данных с солью"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            data = f(*args, **kwargs)
+            salt = secrets.token_hex(salt_length)
+            if algorithm == "sha256":
+                return hashlib.sha256((data + salt).encode()).hexdigest()
+            elif algorithm == "sha512":
+                return hashlib.sha512((data + salt).encode()).hexdigest()
+            return data
+
+        return wrapper
+
+    return decorator
+
+
+def mask_sensitive(
+    mask_char: str = "*", visible_chars: int = 4
+) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """Маскирование чувствительных данных"""
+
+    def decorator(f: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            data = f(*args, **kwargs)
+            if len(data) <= visible_chars:
+                return mask_char * len(data)
+            return data[:visible_chars] + mask_char * (len(data) - visible_chars)
+
+        return wrapper
+
+    return decorator

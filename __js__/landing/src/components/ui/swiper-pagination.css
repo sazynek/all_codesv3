@@ -1,0 +1,54 @@
+/* --------------- */
+/* Стили для пагинации под слайдером */
+.banner-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+}
+
+/* Для точечной пагинации */
+.pagination-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #d1d5db;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.pagination-dot.active {
+    background-color: #3b82f6;
+    transform: scale(1.3);
+}
+
+.pagination-dot:hover {
+    background-color: #9ca3af;
+}
+
+/* Для цифровой пагинации */
+.pagination-number {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid #e5e7eb;
+    background-color: white;
+}
+
+.pagination-number.active {
+    background-color: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+}
+
+.pagination-number:hover {
+    background-color: #f3f4f6;
+}

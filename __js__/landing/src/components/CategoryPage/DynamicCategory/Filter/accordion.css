@@ -1,0 +1,50 @@
+.accordion-content {
+    animation-duration: 0.3s;
+    animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.accordion-content[data-state='open'] {
+    animation-name: slideDown;
+}
+
+.accordion-content[data-state='closed'] {
+    animation-name: slideUp;
+}
+
+@keyframes slideDown {
+    from {
+        height: 0;
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        height: var(--radix-accordion-content-height);
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideUp {
+    from {
+        height: var(--radix-accordion-content-height);
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        height: 0;
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
+.accordion-trigger {
+    transition: all 0.2s ease-in-out;
+}
+
+.accordion-trigger:hover {
+    background-color: #f8fafc;
+}
+
+.accordion-trigger[data-state='open'] {
+    background-color: #f1f5f9;
+}

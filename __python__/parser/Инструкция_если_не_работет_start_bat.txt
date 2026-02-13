@@ -1,0 +1,16 @@
+# Проверка состояния Docker (должен отобразить версию)
+docker --version
+# Проверка состояния Docker-Compose (должен отобразить версию, version без -- )
+docker  compose version
+
+# Запуск парсера (фоновый режим, если убрать -d, то будет работать с выводом после некоторой задержки)
+docker compose up --build -d
+
+# Проверка работы
+docker compose ps
+
+# Просмотр логов в реально времени(выход: Ctrl+C, если убрать -f, то статические логи)
+docker compose logs -f
+
+# Остановка парсера
+docker compose down

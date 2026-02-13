@@ -1,0 +1,26 @@
+# Telegram Account Manager Bot - Dependencies
+# ============================================
+
+# Telethon - Telegram MTProto library
+Telethon==1.42.0
+
+# SOCKS proxy support (required for Telethon)
+python-socks[asyncio]==2.4.4
+aiohttp==3.9.5
+
+# Database
+SQLAlchemy[asyncio]==2.0.25
+aiosqlite==0.19.0
+
+# Database migrations
+alembic==1.13.1
+
+# Settings & environment
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Async utilities
+anyio==4.2.0
+
+# Optional: PostgreSQL support (uncomment if needed)
+# asyncpg==0.29.0

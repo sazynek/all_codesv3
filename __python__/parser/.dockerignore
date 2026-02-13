@@ -1,0 +1,12 @@
+.venv
+__pycache__
+output
+*.pyc
+.git
+data
+tests
+.pytest_cache
+.gitignore
+contracts_data copy.xlsx
+
+

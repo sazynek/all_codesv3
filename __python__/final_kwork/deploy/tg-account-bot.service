@@ -1,0 +1,25 @@
+[Unit]
+Description=Telegram Account Manager Bot
+After=network.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/opt/tg-account-bot
+Environment="PATH=/opt/tg-account-bot/.venv/bin"
+ExecStart=/opt/tg-account-bot/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tg-account-bot
+
+[Install]
+WantedBy=multi-user.target

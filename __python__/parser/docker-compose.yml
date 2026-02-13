@@ -1,0 +1,26 @@
+services:
+  zakupki-parser:
+    build: .
+    container_name: zakupki_parser_app
+    volumes:
+      # 1. Именованный том для РАБОЧИХ данных (пользователь НЕ видит)
+      - zakupki_workdata:/app/data:rw
+
+      # 2. Bind mount для РЕЗУЛЬТАТОВ (пользователь видит в ./data/)
+      - ./data:/app/output:rw
+
+    environment:
+      # Пути к рабочим файлам (в именованном томе)
+      - EXCEL_FILE=/app/data/contracts_data.xlsx
+      - CHECKED_URLS_FILE=/app/data/checked_urls.json
+
+      # Пути к результатам (в bind mount, видим пользователю)
+      - FINAL_OUTPUT_PATH=/app/output/filtered_contracts.xlsx
+      - FINAL_OUTPUT_PATH2=/app/output/weak_filtered_contracts.xlsx
+      - FINAL_OUTPUT_PATH3=/app/output/cleared_contracts.xlsx
+
+    restart: unless-stopped # Верно, чтобы не зацикливался при ошибках
+
+# Определяем именованный том (он сохраняется между запусками)
+volumes:
+  zakupki_workdata:
